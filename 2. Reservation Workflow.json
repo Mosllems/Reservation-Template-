@@ -1,0 +1,2222 @@
+{
+  "name": "2. Reservation Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        -704
+      ],
+      "id": "b907652f-959d-4c49-afe5-2c0b47e7677e",
+      "name": "No Operation, do nothing2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO message_sessions (ig_id, last_message_at, is_complete)\nVALUES ($1, NOW(), FALSE)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $('User Mapping').first().json.ig_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        -736
+      ],
+      "id": "51c03bc8-e884-4efb-abc2-a261991fab2a",
+      "name": "Insert New Session1",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, ig_id FROM message_sessions WHERE ig_id = $1 AND is_complete = FALSE;",
+        "options": {
+          "queryReplacement": "={{ $('User Mapping').first().json.ig_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        240,
+        -832
+      ],
+      "id": "4945d1e0-1bb9-452b-9102-f457307d97ca",
+      "name": "Check Active Session1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nexflow",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -656,
+        -832
+      ],
+      "id": "3cdd43d8-3ca3-43b8-84ea-80abfb8bb511",
+      "name": "Instagram Webhook1",
+      "webhookId": "3f305106-96f5-4cae-a6c3-c1b0f5607036"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE pending_messages SET is_processed = TRUE WHERE ig_id = $1 AND is_processed = FALSE;\nUPDATE message_sessions SET is_complete = TRUE, combined_message = $2, last_message_at = NOW() WHERE ig_id = $1 AND is_complete = FALSE;",
+        "options": {
+          "queryReplacement": "={{ $('User Mapping').first().json.ig_id }},{{ $json.combined_message }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2016,
+        -944
+      ],
+      "id": "8f52a7cf-6ad4-400f-8e4b-b432064f1f1c",
+      "name": "Mark Processed",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "474f7aae-8c15-44b8-80cc-505210987d1e",
+              "leftValue": "={{ $json.ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        -832
+      ],
+      "id": "6e033e60-0cac-4d86-92cf-c5ab5a875470",
+      "name": "Combine Message Ready?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n\tCOUNT(*) AS message_count,\n\tSTRING_AGG(pm.last_input_text, ' ' ORDER BY pm.created_at) AS combined_message,\n\tMAX(pm.created_at) AS last_msg_at,\n\tCOALESCE(EXTRACT(EPOCH FROM (NOW() - MAX(pm.created_at))), 0) AS seconds_since_last,\n\tCASE WHEN COALESCE(EXTRACT(EPOCH FROM (NOW() - MAX(pm.created_at))), 0) >= {{ $('Barbershop Config').item.json.waiting_time }} THEN TRUE ELSE FALSE END AS ready\nFROM pending_messages pm\nWHERE pm.ig_id = $1 AND pm.is_processed = FALSE",
+        "options": {
+          "queryReplacement": "={{ $('User Mapping').first().json.ig_id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1520,
+        -832
+      ],
+      "id": "457f9317-165e-434f-907b-473af8bd70cd",
+      "name": "Combine Messages",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pending_messages (ig_id, last_input_text) VALUES ($1, $2);",
+        "options": {
+          "queryReplacement": "={{ $('User Mapping').first().json.ig_id }},{{ $('User Mapping').first().json.last_input_text }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1056,
+        -832
+      ],
+      "id": "98a12406-3688-4139-bc95-929ad8b80c9c",
+      "name": "Save Pending Message",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE message_sessions SET last_message_at = NOW() WHERE id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Check Active Session1').first().json.id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        -944
+      ],
+      "id": "4a713365-e294-478f-bc9c-dfc984c5b99e",
+      "name": "Update Session Time",
+      "alwaysOutputData": false,
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "35d85112-ac68-477b-9f3a-0d05aec907fa",
+              "leftValue": "={{ $json }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        496,
+        -832
+      ],
+      "id": "bd10d556-04fb-4922-9e41-5a26b92e3d8d",
+      "name": "Session Exist?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "689c0b26-37d0-444e-816c-2d753e1683f2",
+              "name": "barbershop_details",
+              "value": "آرایشگاه نکس فلو در سال 1404 تأسیس شده و هدفش ارائه خدمات حرفه‌ای موی مردانه است. مدیریت و مسئولیت کلیه اصلاحات توسط آقای مسلم امیری انجام می‌شود. تخصص اصلی ما در ارائه به‌ روزترین استایل‌های مدرن، فیدهای تمیز و آرایش حرفه‌ای ریش است. \nآرایشگاه نکس فلو واقع در تهران، تهرانسر، بلوار بهشتی، پلاک ۴۷ بوده و ساعت کار ما از ۹ صبح تا ۱۰ شب هر روز (حتی روزهای تعطیل) است. \nبرای مراجعه حتماً باید وقت قبلی از ربات هوشمند رزرو کنید. خدمات خاص مانند اصلاح داماد نیز با هماهنگی قبلی انجام می‌شود. \n\nشماره تماس مستقیم برای هماهنگی بیشتر، 09102824362 است و لوکیشن دقیق ما در گوگل مپ:\n“https://share.google/1tPprDoELiFmSLwFA”\n",
+              "type": "string"
+            },
+            {
+              "id": "c89084bc-1fc7-46ca-9029-b8cf756766d7",
+              "name": "waiting_time",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "bea0edd9-7f98-42c4-af2e-781aeb4e64d3",
+              "name": "flow_ns",
+              "value": "content20251129053256_757368",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -224,
+        -832
+      ],
+      "id": "709f3679-5dde-4ab1-889f-0441b9b7da05",
+      "name": "Barbershop Config"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5d7dc0b1-122b-4c30-8bc5-81932193c23d",
+              "name": "ig_username",
+              "value": "={{ $json.body.ig_username }}",
+              "type": "string"
+            },
+            {
+              "id": "cedde017-8f8d-4882-b12b-0127bed0562f",
+              "name": "full_name",
+              "value": "={{ $json.body.name }}",
+              "type": "string"
+            },
+            {
+              "id": "f779af06-d902-452b-8c75-9eeb37648f11",
+              "name": "last_input_text",
+              "value": "={{ $json.body.last_input_text }}",
+              "type": "string"
+            },
+            {
+              "id": "b773b5a8-8350-487e-a893-69bb52681cd3",
+              "name": "profile_pic",
+              "value": "={{ $json.body.profile_pic }}",
+              "type": "string"
+            },
+            {
+              "id": "5e72cedc-caa1-48e4-a1e3-313869fda6d3",
+              "name": "ig_last_interaction",
+              "value": "={{ $json.body.ig_last_interaction }}",
+              "type": "string"
+            },
+            {
+              "id": "723098d0-eaa2-46e9-aecd-da1018eb80f7",
+              "name": "ig_id",
+              "value": "={{ $json.body.ig_id }}",
+              "type": "number"
+            },
+            {
+              "id": "26079bce-422b-4c95-a2e6-f1d55448672b",
+              "name": "subscriber_id",
+              "value": "={{ $json.body.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -448,
+        -832
+      ],
+      "id": "e6a46a38-e9d5-4ec6-ade6-02c99fe5b76d",
+      "name": "User Mapping"
+    },
+    {
+      "parameters": {
+        "amount": "={{ $('Barbershop Config').first().json.waiting_time }}"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1296,
+        -832
+      ],
+      "id": "f7def2d6-8a98-4cea-869b-1cc29de72bf7",
+      "name": "Wait",
+      "webhookId": "65bdd9ba-d0f3-40f5-ba7b-3890869439f8"
+    },
+    {
+      "parameters": {
+        "content": "## Instagram Session Management\n",
+        "height": 544,
+        "width": 3136
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        -1040
+      ],
+      "typeVersion": 1,
+      "id": "57ec9ad0-f5cf-4459-8be9-f6f89b4ffa92",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f0a18cfd-7433-421b-bb89-9b753fc4ab07",
+              "name": "Classifier Agent System Prompt",
+              "value": "=### Role & Objective\nYou are a **Strict Classification Engine**. \nYour ONLY task is to map the user's LAST message to a category ID based on the current intent.\n**CRITICAL:** Do NOT answer the user. Do NOT write conversational text. Output **ONLY** raw JSON: `{ \"o\": \"ID\" }`.\n\n### Classification Rules\n\n**ID \"1\": Small Talk / General**\n- Greetings (\"سلام\", \"چطوری\"), Gratitude (\"مرسی\", \"ممنون\"), Compliments, or simple Farewell.\n- Purely social messages with no business action required.\n\n**ID \"2\": Consulting / Info**\n- Questions about **Prices**, **Styles/Models**, **Samples**, or **Shop Location**.\n- General inquiries where the user is just gathering information.\n\n**ID \"3\": Reservation & Commitment (High Priority)**\n- Requests to **Book a time**, **Check Availability** (\"فردا هستی؟\"), or **Confirm** a suggested slot.\n- **Implicit Affirmations:** Phrases like \"آره همون ساعت\", \"اوکی ثبتش کن\", \"حله بنویس\", \"تایید می کنم\".\n- Providing **Personal Info** (Name, Phone) or answering \"When\" or \"Who\" questions.\n- **Priority Rule:** If the user asks for price AND a time (e.g., \"قیمت چنده و فردا ساعت ۵ هستی؟\"), **Category 3 wins**.\n\n### Examples for Long Conversations\nUser: \"سلام\" -> { \"o\": \"1\" }\nUser: \"قیمت فید چنده؟\" -> { \"o\": \"2\" }\nUser: \"فردا ساعت ۹ شب رو برام رزرو کن\" -> { \"o\": \"3\" }\nUser: \"آره همون موقع خوبه، ثبتش کن\" -> { \"o\": \"3\" }\nUser: \"اوکی حله، فردا میبینمت\" -> { \"o\": \"3\" }\nUser: \"دمت گرم ردیفه\" -> { \"o\": \"1\" }\n\n### Your Task\nClassify the INTENT of this specific input:\n\"{{ $json.last_message }}\"",
+              "type": "string"
+            },
+            {
+              "id": "4a613a61-4f16-4e03-8bf2-66d3aab6befa",
+              "name": "Small-Talk Agent System Prompt",
+              "value": "=### 1. Role & Objective\n\nYou are the charismatic, friendly \"Face\" of a Barbershop on Instagram.\n\n- **Context:** The user has sent a message that is purely social (Greeting, Gratitude, Compliment, or Farewell).\n\n- **Your Job:** Reply immediately with a warm, engaging, and human-like \"Dash-Mashti\" response in Persian.\n\n- **Goal:** Build a strong \"Bro\" relationship (Rapport) with the customer.\n\n- **Output Requirement:** You must segment your response into short, natural chat bubbles for Instagram DM.\n\n\n\n### 2. Tone & Persona\n\n- **Tone:** \"Dash Mashti\" (Persian slang, masculine, brotherly, cool).\n\n- **Keywords to use:** \"سلطان\" (King), \"داداش\" (Bro), \"رفیق\" (Friend), \"عشقی\" (You're love), \"فدایی داری\", \"مخلصیم\", \"دایی\".\n\n- **Style:** Short, punchy, and energetic. Use emojis sparingly but effectively (❤️, 🔥, 🙏).\n\n\n\n### 3. Response Guidelines\n\n- If the user says \"سلام\" or \"سلام سلام\" -> Welcome them warmly.\n\n- If the user says \"دستت درد نیاد\" or \"دمت گرم\" -> Respond with humility (\"نوکرتم داداش\", \"انجام وظیفست\").\n\n- If the user compliments the shop -> Thank them energetically.\n\n- If the user says \"خدافظ\" -> Say a cool goodbye (\"یا علی\", \"بخشیدمت به خدا\").\n\n- **Constraint:** Do not offer to book an appointment or show hair models here. Just handle the social aspect.\n\n\n\n### 4. Barbershop Details (Context)\n\n{{ $json.barbershop_details }}\n\n\n\n### 5. Processing Rules & Output Fields\n\n\n\nYou must output a **Strict JSON Object** with fields `field_1` to `field_16`.\n\n\n\n#### **field_1**: GIF Category Strategy\n\nAnalyze the sentiment and set `field_1` to **one** of these exact category names:\n\n1.  **\"welcome\"**: For greetings (\"Salam\", \"Dorood\", \"Hi\").\n\n2.  **\"cool\"**: For thanks, compliments, agreement, or \"Damet garm\".\n\n3.  **\"\"** (Empty String): If no image/GIF is needed (e.g., for short goodbyes).\n\n\n\n#### **field_2** → **field_16**: Text Segmentation\n\nSplit your Persian response into **2 to 5** natural conversational segments (bubbles).\n\n- **Rule 1:** Keep it natural. Don't write long paragraphs in one bubble, split it in some bubbles.\n\n- **Rule 2:** Split based on pauses. E.g., Greeting in `field_2`, Question in `field_3`, bye if `field_4`.\n\n- **Rule 3:** Fill fields in order. Leave unused fields as empty strings `\"\"`.\n\n\n\n### 6. Output Format\n\nReturn **ONLY** this JSON structure, You don’t need to include all the empty fields up to field_16. Just return the ones that actually have values.\n\n```json\n{\n  \"field_1\": \"category_name_or_empty\",\n  \"field_2\": \"Text segment\",\n  \"field_3\": \"Text segment or empty\",\n  \"field_4\": \"Text segment or empty\",\n  \"field_5\": \"Text segment or empty\",\n  \"field_6\": \"Text segment or empty\",\n  \"field_7\": \"Text segment or empty\",\n  \"field_8\": \"Text segment or empty\",\n  \"field_9\": \"Text segment or empty\",\n  \"field_10\": \"Text segment or empty\",\n  \"field_11\": \"Text segment or empty\",\n  \"field_12\": \"Text segment or empty\",\n  \"field_13\": \"Text segment or empty\",\n  \"field_14\": \"Text segment or empty\",\n  \"field_15\": \"Text segment or empty\",\n  \"field_16\": \"Text segment or empty\"\n}\n```\n\n###  7. Few-Shot Examples\n\nUser Input: \"سلام داداش خوبی؟\"\nYour Output:\n{\n  \"field_1\": \"welcome\",\n  \"field_2\": \"سلام به روی ماهت سلطان! ❤️\",\n  \"field_3\": \"ما خوبیم تو چطوری؟\",\n  \"field_4\": \"خوش گذشت بهت؟\"\n}\n\n\nUser Input: \"دمت گرم خیلی کارتون درسته.\" \nYour Output:\n{\n  \"field_1\": \"cool\",\n  \"field_2\": \"عشقی داداش!\",\n  \"field_3\": \"نظر لطفته ستون.\",\n  \"field_4\": \"ما اینجاییم که شما خوش‌تیپ‌تر باشی. فدایی داری! 🔥\"\n}\n\n\n\nUser Input: \"مرسی فعلا.\" \nYour Output:\n{\n  \"field_1\": \"\",\n  \"field_2\": \"چاکریم رفیق.\",\n  \"field_3\": \"مراقب خودت باش.\",\n  \"field_4\": \"یا علی! 👋\"\n}\n\n\n### Your Turn\n\nGenerate the strict JSON response for the following input:\n\nUser Input: ```",
+              "type": "string"
+            },
+            {
+              "id": "b2e10e45-f8a5-4cdb-9b95-c0b961e98895",
+              "name": "Counseling Agent System Prompt",
+              "value": "=### 1. Role & Objective\n\nYou are the intelligent, \"Dash Mashti\" Consultant for a Men's Barbershop.\n\n- **Context:** The user is asking about Haircut Styles, Prices, Advice, or Samples (Consultation Phase).\n\n- **Your Job:** Explain styles, give advice, and show prices using the available tool data. You must translate all information into fluent, cool, \"Dash Mashti\" Persian.\n\n- **Goal:** Inform the client and help them choose a style so they feel ready to book.\n\n- **Output Requirement:** Segment your response into short, natural chat bubbles. not .md text or using (** for bold), just text in bubbles and output format will discuss in section 5 and 6.\n\n\n\nthe haircut prices are in Toman.\n\n\n\n### 2. Tone & Persona\n\n- **Tone:** \"Dash Mashti\" (Persian slang, masculine, brotherly).\n\n- **Keywords:** \"سلطان\" (King), \"داداش\" (Bro), \"رفیق\", \"عشقی\", \"ستون\" (Pillar/Support), \"فدایی داری\".\n\n- **Style:** Professional but very friendly. Use emojis (✂️, 💈, 😎) to keep it engaging.\n\n\n\n### 3. Tool Usage & Context\n\nYou have access to the `get_hair_models` tool.\n\n- **Tool Data:** When the tool returns data (haircut names, prices, descriptions, image URLs), use this exact information.\n\n- **Do not hallucinate** prices or styles not in the tool data.\n\n- **IMPORTANT:** When calling the `get_hair_models` tool, you must pass an **EMPTY JSON OBJECT** `{}` as the argument. Do NOT pass `[]` or `null`.\n\n\n\n### 4. Barbershop Info: \n\n{{ $json.barbershop_details }}\n\n\n\n### 5. Processing Rules & Output Fields\n\n\n\n**Phase 1: Tool Calling**\n\nIf the user asks about prices or models, CALL THE TOOL first. Do not generate the JSON output yet.\n\n\n\n**Phase 2: Final Response**\n\nOnce you have the tool data, you must output a **Strict JSON Object** with fields `field_1` to `field_16`.\n\n\n\n#### **field_1**: Image Strategy (The Selector)\n\nYou must decide what to show based on the conversation:\n\n1.  **Specific URL**: If you are recommending a specific haircut from the tool data (e.g., \"Fade\"), put the **Image URL** of that haircut in `field_1`.\n\n2.  **\"thinking\"**: If the user asks for advice (e.g., \"What suits a round face?\") and you are analyzing.\n\n3.  **\"haircut\"**: If the user asks for general samples but no specific style is selected yet, or asks about prices generally.\n\n4.  **\"cool\"**: If the user likes your suggestion or compliments the advice.\n\n5.  **\"\"** (Empty String): If no image is needed.\n\n\n\n#### **field_2** → **field_16**: Text Segmentation\n\nSplit your Persian response into **2 to 15** natural conversational segments.\n\n- **Rule 1:** Explain the style/price clearly but informally. \n\n- **Rule 2:** If listing multiple models, split them into separate bubbles, every style in one bubble.\n\n- **Rule 3:** If the user asks to book or reserve *inside* this chat, say \"ایولا پسر! بیا زمان رو تنظیم کنیم\" (in Persian) in the last segment, so the next user message triggers the Reservation Agent not consulting agent.\n\n- **Rule 4:** Fill fields in order. Unused fields must be `\"\"` and no need to write them in output due to use lower tokens.\n\n\n\n### 6. Output Format\n\nFor your **FINAL RESPONSE**, Return **ONLY** this JSON structure:\n\n```json\n{\n  \"field_1\": \"URL_OR_CATEGORY_NAME_OR_EMPTY\",\n  \"field_2\": \"Text segment\",\n  \"field_3\": \"Text segment\",\n  \"field_4\": \"Text segment or empty\",\n  \"field_5\": \"Text segment or empty\",\n  \"field_6\": \"Text segment or empty\",\n  \"field_7\": \"Text segment or empty\",\n  \"field_8\": \"Text segment or empty\",\n  \"field_9\": \"Text segment or empty\",\n  \"field_10\": \"Text segment or empty\",\n  \"field_11\": \"Text segment or empty\",\n  \"field_12\": \"Text segment or empty\",\n  \"field_13\": \"Text segment or empty\",\n  \"field_14\": \"Text segment or empty\",\n  \"field_15\": \"Text segment or empty\",\n  \"field_16\": \"Text segment or empty\"\n}\n```\n\n### 7. Few-Shot Examples\n\nContext: Tool returns \"Low Fade\" with Pic URL \"https://s21.uupload.ir/files/dunijet/n8n/CUT_LOWFADE.jpg\" and price \"280000\".\n\n\n\nUser Input: \"مدل فید کوتاه چه قیمته؟ عکسش رو داری؟\" Your Output: { \"field_1\": \"https://s21.uupload.ir/files/dunijet/n8n/CUT_LOWFADE.jpg\", \"field_2\": \"به به! سلیقه‌ت عالیه داداش. 👌\", \"field_3\": \"مدل فید کوتاه، خوراکه خودته.\", \"field_4\": \"قیمتش قابلتو نداره سلطان، ۲۸۰ تومنه.\", \"field_5\": \"اینم عکسش که ببینی چه رخ عقابی‌ای داره. 😎\" }\n\n\n\nUser Input: \"من صورتم کشیده‌ست چی بهم میاد؟\" Your Output: { \"field_1\": \"thinking\", \"field_2\": \"سوال فنی پرسیدی رفیق!\", \"field_3\": \"واسه صورت کشیده، نباید دور موهات رو خیلی خالی کنی.\", \"field_4\": \"من مدل «ساید پارت» یا همون بغل باز رو پیشنهاد میدم که صورتت رو پرتر نشون بده.\", \"field_5\": \"میخوای عکسشو برات بفرستم؟\" }\n\n\n\nUser Input: \"قیمت اصلاح ساده چنده؟\" Your Output: { \"field_1\": \"haircut\", \"field_2\": \"داداش اصلاح ساده با آنکارد و شستشو، ۱۵۰ تومن در خدمتیم.\", \"field_3\": \"البته مهمون مایی، تعارف نکنیا! ❤️\" }\n\n\n\nYour Turn\n\nGenerate the strict JSON response for the following input:\n\n\n\nUser Input: ```",
+              "type": "string"
+            },
+            {
+              "id": "0fd1c157-650c-4616-b892-5cabd06c0b14",
+              "name": "Reservation Agent System Prompt",
+              "value": "=### 1. Role & Objective\n\nYou are the smart, cool, and loyal \"Dash Mashti\" Assistant of the Barbershop.\n\n- **Context:** The user wants to book an appointment, check time slots, or finalize a reservation.\n\n- **Your Job:** Manage the booking process (Check availability -> Get User Info -> Book in Calendar).\n\n- **Goal:** Finalize the reservation efficiently while maintaining a friendly \"Bro\" relationship.\n\n- **Output Requirement:** Always Segment your response into short, natural chat bubbles for user. It is mandatory, without any exception, to always deliver the output strictly as chat bubbles in JSON format for user. Absolutely no text, explanation, or content is allowed outside the JSON structure under any circumstances. The Json Format explained in section 5 and 6.\n\n\n### 2. Tone & Persona\n\n- **Tone:** \"Dash Mashti\" (Persian slang, masculine, brotherly).\n\n- **Keywords:** \"داداش\" (Bro), \"رفیق\" (Friend), \"سلطان\" (King), \"دمت گرم\", \"چشم\", \"ردیفه\", \"نوکرتم\".\n\n- **Language:** MANDATORY PERSIAN (Farsi).\n\n\n\n### 3. Context\n\n- **Current Time:** {{ $now.setZone('Asia/Tehran').toFormat('yyyy-MM-dd HH:mm') }}\n\n- **Shamsi Date:** {{ $now.setZone('Asia/Tehran').reconfigure({ outputCalendar: 'persian' }).toFormat('yyyy/MM/dd') }}\n\n- **Barbershop Info:** {{ $json.barbershop_details }}\n\n### 4. Tool Usage Rules (CRITICAL)\n\nYou have access to several tools. You must use them in this EXACT order for a booking, You MUST call the necessary tools immediately when needed and output the final result. do not tell user to wait or something like this.\n\n1.  **`get_hair_models`**: Only if the user asks about styles. **ALWAYS pass an empty object `{}` as arguments.**\n\n2.  **`check_calendar_availability`**: Use this FIRST when a user suggests a time or need help for recommending a good time. (times are not fixed. The required time is either already available in the chat history or must be determined by calling the `get_hair_models` tool and using the `duration_minutes` field from its output when checking a reservation.)\n\n3. **`reserve_a_time`**: Call this tool ONLY when you have confirmed details (User's Full Name, User's Phone Number, Selected Hair Model, Confirmed Date/Time For Booking). You MUST calculate and send the start and end fields in ISO 8601 format (e.g., 2025-12-14T17:00:00+03:30). Appointment durations are not fixed. Each hair model has its own specific duration, and different hair models may take different amounts of time. The end time must be calculated based on the `duration_minutes` value associated with the selected hair model (retrieved from the chat history or by calling the get_hair_models tool), and added to the start time.\n\n**IMPORTANT:** When calling tools, strictly output the required JSON arguments. Do not output the chat JSON format during tool calls.\n\n### 5. Output Fields (Final Chat Response)\n\nOnce you have the tool results, output a **Strict JSON Object** with fields `field_1` to `field_16`.\n\n#### **field_1**: Strategy/Status\n\n1.  **\"cool\"**: When the booking is successfully finished and saved.\n\n2.  **\"welcome\"**: Start of conversation.\n\n3.  **\"thinking\"**: If you are thinking about a good time to reserve and ask user.\n\n4. **\"The URL of Haircut model\"**: if you have the url of haircut from chat history, write url in field_1 that user can see picture of reserved model.\n\n5.  **\"\"** (Empty String): Simple text responses (asking for name/phone).\n\n#### **field_2** → **field_16**: Text Segmentation\n\nSplit your Persian response into **2 to 15** bubbles.\n\n- **Rule 1:** If asking for info (Name/Phone), put it in a separate bubble.\n\n- **Rule 2:** If confirming a booking, put Date/Time in one bubble, Address in another.\n\n- **Rule 3:** Unused fields must be `\"\"`.\n\n\n### 6. Chat Output Format\n\nReturn **ONLY** this JSON structure:\n\n```json\n{\n  \"field_1\": \"STRATEGY_KEY or Image URL If Exist OR Empty\",\n  \"field_2\": \"Text segment\",\n  \"field_3\": \"Text segment\",\n  \"field_4\": \"Text segment or empty\",\n  \"field_5\": \"Text segment or empty\",\n  \"field_6\": \"Text segment or empty\",\n  \"field_7\": \"Text segment or empty\",\n  \"field_8\": \"Text segment or empty\",\n  \"field_9\": \"Text segment or empty\",\n  \"field_10\": \"Text segment or empty\",\n  \"field_11\": \"Text segment or empty\",\n  \"field_12\": \"Text segment or empty\",\n  \"field_13\": \"Text segment or empty\",\n  \"field_14\": \"Text segment or empty\",\n  \"field_15\": \"Text segment or empty\",\n  \"field_16\": \"Text segment or empty\"\n}\n```\n### 7. Calendar Search Protocol (STRICT)\n1. تاریخ امروز: {{ $now.format('YYYY-MM-DD') }} و روز هفته: {{ $now.format('dddd') }} است.\n2. تمام زمان‌ها در فرمت 24 ساعته (مثلاً 21:00 برای 9 شب) و منطقه زمانی Asia/Tehran هستند.\n3. وقتی کاربر وقت می‌خواهد، اول با Tool لیست رویدادها را برای آن روز خاص بگیرید.\n4. **قانون طلایی:** اگر لیست رویدادهای بازگشتی از Tool خالی بود `[]` یا هیچ رویدادی دقیقاً در ساعت درخواستی نبود، آن زمان ۱۰۰٪ \"آزاد\" است. \n5. توهم نزن: اگر رویدادی در خروجی Tool نیست، حق نداری بگویی وقت پر است.\n6. اگر وقت پر بود، بر اساس لیست، نزدیک‌ترین ساعت خالی همان روز را پیشنهاد بده.\n\n### 8. Few-Shot Examples\n\nUser: \"فردا ساعت ۵ عصر وقت داری؟\" Tool Call: check_calendar_availability(...) Your Output (After Tool): { \"field_1\": \"thinking\", \"field_2\": \"یه لحظه وایسا دفترو چک کنم سلطان... 📅\", \"field_3\": \"بذار ببینم فردا چه خبره.\" , \"field_4\": \"اره این تایم خالی هست میخای همین رو رزرو کنیم؟\" \n}\n\nUser: \"آره ۵ عصر خوبه.\" Your Output: { \"field_1\": \"\", \"field_2\": \"ایول، ساعت ۵ رو برات نگه داشتم.\", \"field_3\": \"فقط واسه اینکه ثبتش کنم،\", \"field_4\": \"یه اسم شریف با شماره تماس برام بفرست بی زحمت. 🙏\" }\n\nUser: \"امیرحسین احمدی هستم ۰۹۱۲۱۰۰۱۰۱۰...\" Tool Calls:  reserve_a_time \nYour Output (After Tools): { \"field_1\": \"cool\", \"field_2\": \"ردیف شد آقا امیرحسین! ✅\", \"field_3\": \"قرارمون شد فردا ساعت ۱۷:۰۰\", \"field_4\": \"لوکیشن: خیابان فردوسی، کوچه نسترن.\", \"field_5\": \"منتظرتیم ستون. ❤️\", \"field_6\": \"شمارم اگه نیازی به کمک بود\" , \"field_7\": \"۰۹۱۴۸۵۷۱۴۱۱ \", \"field_8\": \"اینم از لوکیشن مغازه:\", \"field_9\": \"https://share.google/1tPprDoELiFmSLwFA\" }\n\nYour Turn\nIt is mandatory, without any exception, to always deliver the output strictly as chat bubbles in JSON format for user. Absolutely no text, explanation, or content is allowed outside the JSON structure under any circumstances. The Json Format explained in section 5 and 6.\n\nGenerate the strict JSON response for the following input:\n\nUser Input: ```",
+              "type": "string"
+            },
+            {
+              "id": "d718edb0-d164-46a2-a324-33b3366bc24a",
+              "name": "Reflector Agent System Prompt",
+              "value": "=### 1. Role & Objective\nYou are the **Conversation Flow Supervisor And Chat Reflector**. Your only goal is to analyze the output of the previous AI Agent and decide if the task is **COMPLETE** or requires a **FOLLOW-UP**.\n\n### 2. Input Data\nYou will receive input that is previous agent's response to the user. Focus on Text.\n\n### 3. Decision Logic\n\n**CASE A: Task Incomplete (Needs Loop)**\nIf you feel **\"wait\"**, **\"thinking\"**, or indicates a tool check (e.g., checking calendar, database, or asking the user to hold on):\n- The previous agent has promised an action but hasn't delivered the final result yet.\n- **Action:** You must force the system to run the agent again to execute the tools and get the answer.\n\n**CASE B: Task Complete**\nIf you feel cool and not in the middle of chat:\n- The agent has given a final answer, asked a question to the user, or completed the turn.\n- **Action:** No further processing needed.\n\n### 4. Output Format\nReturn a **Strict JSON Object**. Do NOT write any conversational text.\n\n```json\n{\n  \"status\": \"CONTINUE | STOP\",\n  \"reason\": \"Short explanation\",\n  \"next_instruction\": \"A system prompt command to feed back into the agent if status is CONTINUE\"\n}\n```\n\nYour Turn\nAnalyze the following agent output:",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        -832
+      ],
+      "id": "8249f38e-ca04-4d55-a360-a719c6fc6db5",
+      "name": "System Prompts"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Combine Message Ready?').first().json.combined_message }}",
+        "options": {
+          "systemMessage": "={{ $('System Prompts').item.json['Classifier Agent System Prompt'] }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -544,
+        -336
+      ],
+      "id": "2fcab321-e82a-4875-9d6b-d5b074c425f7",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "deepseek/deepseek-chat-v3-0324",
+        "options": {
+          "maxTokens": 50,
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        -128
+      ],
+      "id": "5f877269-f557-469a-b455-8747e9264570",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "FUJP81UTfZTPXgfj",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawResponse = $input.first().json.output;\n\ntry {\n    // ۱. حذف تگ‌های مارک‌داون و کلمه json و فضاهای خالی اضافه\n    const cleanString = rawResponse\n        .replace(/```json/g, \"\")\n        .replace(/```/g, \"\")\n        .replace(/^json/i, \"\") // حذف کلمه json اگر در ابتدا باشد\n        .trim();\n\n    // ۲. تبدیل رشته به آبجکت جی‌سون\n    const output = JSON.parse(cleanString);\n\n    // حالا می‌توانید به راحتی به مقادیر دسترسی داشته باشید\n    console.log(output.o); // خروجی: \"1\"\n    \n    return {output}; \n\n} catch (error) {\n    console.error(\"خطا در تبدیل جی‌سون:\", error);\n    return { error: \"Invalid JSON format\" };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -400
+      ],
+      "id": "e5abf34a-940f-4253-b514-407f424b3752",
+      "name": "Fix JSON Problem 1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawResponse = $input.first().json.output;\n\ntry {\n    // ۱. حذف تگ‌های مارک‌داون و کلمه json و فضاهای خالی اضافه\n    const cleanString = rawResponse\n\n    // ۲. تبدیل رشته به آبجکت جی‌سون\n    const jsonObject = JSON.parse(cleanString);\n\n    // حالا می‌توانید به راحتی به مقادیر دسترسی داشته باشید\n    console.log(jsonObject.o); // خروجی: \"1\"\n    \n    return jsonObject; \n\n} catch (error) {\n    console.error(\"خطا در تبدیل جی‌سون:\", error);\n    return { error: \"Invalid JSON format\" };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -208
+      ],
+      "id": "bdb8b3b5-0885-44f3-95be-6322110ab996",
+      "name": "Fix JSON Problem 2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1296,
+        -320
+      ],
+      "id": "06099af9-26db-46b7-9132-9475a79f487b",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.o }}",
+                    "rightValue": "1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6e9a794b-99bb-44bc-adb3-9462cbbb9279"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Small-Talk"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "54adf5e3-cff1-4c11-b7df-26872ff06f3d",
+                    "leftValue": "={{ $json.output.o }}",
+                    "rightValue": "2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Consultation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "262e201f-2ece-40d3-82b4-08aaaa8b3f4e",
+                    "leftValue": "={{ $json.output.o }}",
+                    "rightValue": "3",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reservation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2016,
+        -336
+      ],
+      "id": "575573f0-4cd6-4c72-a0c1-d76e62ae322b",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "content": "## Message Router Agent\n\n",
+        "height": 544,
+        "width": 3136
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        -480
+      ],
+      "typeVersion": 1,
+      "id": "abafeb5e-ab73-497d-a774-2944cf971474",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## 1. Small-Talk Agent\n\n",
+        "height": 544,
+        "width": 1376,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2464,
+        -1040
+      ],
+      "typeVersion": 1,
+      "id": "bd33c9a7-fc00-4285-af7a-5088bb0a615b",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## 2. Consulting Agent\n\n\n\n",
+        "height": 544,
+        "width": 1376,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2464,
+        -480
+      ],
+      "typeVersion": 1,
+      "id": "ddcd76b9-2ffd-4276-adbd-8fd5e9da8eb0",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## 3. Reservation Agent\n\n",
+        "height": 544,
+        "width": 1376,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2464,
+        80
+      ],
+      "typeVersion": 1,
+      "id": "a8adc42d-6d80-4808-8117-8215f1469db1",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Combine Messages').first().json.combined_message }}\n\n{{ $json[\"ex-context\"] || \"\"}}",
+        "options": {
+          "systemMessage": "={{ $('System Prompts').item.json['Small-Talk Agent System Prompt'] }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3072,
+        -864
+      ],
+      "id": "c2c0ab1f-4385-4ad6-8b2a-ca33ce741fde",
+      "name": "Small-Talk Agent"
+    },
+    {
+      "parameters": {
+        "model": "deepseek/deepseek-chat-v3-0324",
+        "options": {
+          "temperature": 0.8
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2944,
+        -656
+      ],
+      "id": "c7b9a23b-b3e2-4cf7-a3d3-3273fca8fc39",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "FUJP81UTfZTPXgfj",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('User Mapping').first().json.ig_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        3088,
+        -656
+      ],
+      "id": "f5bfe65a-ff15-4c35-8d86-01b6925ddf98",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "content": "## Send Message To Manychat\n",
+        "height": 544,
+        "width": 3136
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        80
+      ],
+      "typeVersion": 1,
+      "id": "e54c401a-01c8-428a-a192-d6afdd18d303",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -576,
+        256
+      ],
+      "id": "f33d78ae-c8b4-4368-8b55-40427981f563",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a65a4985-2e36-418a-ba07-0f1899bf8bea",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "```",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -336,
+        272
+      ],
+      "id": "271d282e-b2da-4423-a3f2-adcc4e92a3c6",
+      "name": "Json Problem?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "182afeb5-8a32-4244-8da3-d04ef8d15983",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "```",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        32,
+        -336
+      ],
+      "id": "29c957f9-b4f7-4bb6-ba79-2ce71917e5cd",
+      "name": "JSON Problem?"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        400,
+        240
+      ],
+      "id": "b6e5e6a5-bc5c-4ac0-8ed8-66f640ddae53",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.manychat.com/fb/subscriber/setCustomFields",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body_fixed }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1440,
+        240
+      ],
+      "id": "13651b6b-4f29-4c48-a562-85f2e9d41c92",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "tvnEsJQsCC2qEK57",
+          "name": "ManyChat Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "996aeac6-bdbd-4b49-afcc-00dac1cf93d2",
+              "name": "request_body",
+              "value": "= {\n  \"subscriber_id\": \"{{ $('User Mapping').first().json.subscriber_id }}\",\n  \"fields\": [\n    {\n      \"field_name\": \"N8N Response 1 (Image)\",\n      \"field_value\": \"{{ $json.field_1 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 2\",\n      \"field_value\": \"{{ $json.field_2 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 3\",\n      \"field_value\": \"{{ $json.field_3 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 4\",\n      \"field_value\": \"{{ $json.field_4 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 5\",\n      \"field_value\": \"{{ $json.field_5 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 6\",\n      \"field_value\": \"{{ $json.field_6 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 7\",\n      \"field_value\": \"{{ $json.field_7 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 8\",\n      \"field_value\": \"{{ $json.field_8 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 9\",\n      \"field_value\": \"{{ $json.field_9 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 10\",\n      \"field_value\": \"{{ $json.field_10 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 11\",\n      \"field_value\": \"{{ $json.field_11 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 12\",\n      \"field_value\": \"{{ $json.field_12 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 13\",\n      \"field_value\": \"{{ $json.field_13 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 14\",\n      \"field_value\": \"{{ $json.field_14 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 15\",\n      \"field_value\": \"{{ $json.field_15 }}\"\n    },\n    {\n      \"field_name\": \"N8N Response 16\",\n      \"field_value\": \"{{ $json.field_16 }}\"\n    }\n  ]\n} ",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        928,
+        240
+      ],
+      "id": "f1129a01-6ef4-412f-8bd8-6b1b327a11aa",
+      "name": "Set Request Body"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputStr = $input.first().json.request_body;\n\nconst cleaned = inputStr.replace(/[\\u0000-\\u0019]+/g, \"\"); \n\nlet input;\ntry {\n  input = JSON.parse(cleaned);\n} catch (err) {\n  throw new Error(\"Invalid JSON input: \" + err.message);\n}\n\nconst filteredFields = input.fields.filter(\n  f => f.field_value && f.field_value.trim() !== \"\"\n);\n\nconst outputString = JSON.stringify({\n  subscriber_id: input.subscriber_id,\n  fields: filteredFields\n});\n\nreturn [\n  {\n    json: {\n      request_body_fixed: outputString\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        240
+      ],
+      "id": "6e5f108c-ff7d-4a60-be92-ae330ec212cc",
+      "name": "Remove Empty Sections"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.manychat.com/fb/sending/sendFlow",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"subscriber_id\": \"{{ $('User Mapping').first().json.subscriber_id }}\",\n  \"flow_ns\": \"{{ $('Barbershop Config').first().json.flow_ns }}\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1648,
+        240
+      ],
+      "id": "e19a5a23-12f2-484c-a5a1-017d2ced16a8",
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "tvnEsJQsCC2qEK57",
+          "name": "ManyChat Bearer Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2976,
+        -176
+      ],
+      "id": "05c8630d-4fbb-42cb-ab9b-1beec2d05220",
+      "name": "OpenRouter Chat Model2",
+      "credentials": {
+        "openRouterApi": {
+          "id": "FUJP81UTfZTPXgfj",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('User Mapping').first().json.ig_id }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        3152,
+        -176
+      ],
+      "id": "3cba4b28-5561-4eef-ad06-18fb96c5a183",
+      "name": "Simple Memory2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Combine Messages').first().json.combined_message }}\n\n{{ $json[\"ex-context\"] || \"\"}}",
+        "options": {
+          "systemMessage": "={{ $('System Prompts').first().json['Counseling Agent System Prompt'] }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3088,
+        -384
+      ],
+      "id": "e48fa80f-49c4-4d46-b438-556f45fbaff0",
+      "name": "Consulting Agent"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Call this tool to get list of available haircut models. No arguments needed, pass empty objects.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "hair_model",
+          "mode": "list",
+          "cachedResultName": "hair_model"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        3328,
+        -176
+      ],
+      "id": "452c6ba7-88cc-4f22-a784-4e13b965da0c",
+      "name": "get_hair_models",
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-pro",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2736,
+        416
+      ],
+      "id": "d2e57eb2-fdaf-48ef-93f2-6e2cfa63f699",
+      "name": "OpenRouter Chat Model3",
+      "credentials": {
+        "openRouterApi": {
+          "id": "FUJP81UTfZTPXgfj",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('User Mapping').first().json.ig_id }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        2912,
+        416
+      ],
+      "id": "64882287-12e5-4bf7-8347-11cbc526650d",
+      "name": "Simple Memory3"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Call this tool to get list of available haircut models. No arguments needed, pass empty objects.",
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "hair_model",
+          "mode": "list",
+          "cachedResultName": "hair_model"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        3456,
+        400
+      ],
+      "id": "cda83ad1-a5eb-4ebc-8e6b-d1037a1b989c",
+      "name": "get_hair_models1",
+      "credentials": {
+        "postgres": {
+          "id": "IzkJrQlbAMbmX3VC",
+          "name": "Nexflow db"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Use this tool to actually create the event in Google Calender. **Required:** You must provide `start` and `end`, and the user's `name` or `phone number` in the description field.",
+        "calendar": {
+          "__rl": true,
+          "value": "moslemamiri304@gmail.com",
+          "mode": "list",
+          "cachedResultName": "moslemamiri304@gmail.com"
+        },
+        "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+        "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+        "additionalFields": {
+          "description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Description', ``, 'string') }}",
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', ``, 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        3280,
+        400
+      ],
+      "id": "1d6eeeba-535e-4675-8793-a52da5f83179",
+      "name": "reserve_a_time",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "TORFdrAv8vU4361f",
+          "name": "Nexflow Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Combine Messages').first().json.combined_message }}\n\n{{ $json[\"ex-context\"] || \"\"}}\n",
+        "options": {
+          "systemMessage": "={{ $('System Prompts').first().json['Reservation Agent System Prompt'] }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3120,
+        192
+      ],
+      "id": "e1d1e614-e89b-4b5c-aea1-1bf5d2cdf4f0",
+      "name": "Reservation Agent"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Use this tool to check if a specific time slot is free. You MUST provide a `start` and `end` time based on the user's request (e.g., if user says \"tomorrow 5pm\", claculate that date/time). Always check availablity before promising a time.÷",
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "value": "moslemamiri304@gmail.com",
+          "mode": "list",
+          "cachedResultName": "moslemamiri304@gmail.com"
+        },
+        "timeMax": "={{ $now.plus(30, 'days') }}",
+        "options": {
+          "outputFormat": "availability",
+          "timezone": {
+            "__rl": true,
+            "value": "Asia/Tehran",
+            "mode": "list",
+            "cachedResultName": "Asia/Tehran"
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        3104,
+        400
+      ],
+      "id": "e4c93572-e55e-4645-8ae7-09c7fda5a9e4",
+      "name": "check_calendar_availability",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "TORFdrAv8vU4361f",
+          "name": "Nexflow Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Reflection\n\n",
+        "height": 544,
+        "width": 3136
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        640
+      ],
+      "typeVersion": 1,
+      "id": "e235c25b-1064-4856-a914-c084a4c56b0d",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Combine Messages').first().json.combined_message }}",
+        "options": {
+          "systemMessage": "={{ $('System Prompts').first().json['Reflector Agent System Prompt'] }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -480,
+        784
+      ],
+      "id": "61c18dcf-f0d4-4763-b391-5d607d34e06e",
+      "name": "Small-Talk Agent1"
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        992
+      ],
+      "id": "eabe4296-f7bc-40b4-9531-f480785803b2",
+      "name": "OpenRouter Chat Model4",
+      "credentials": {
+        "openRouterApi": {
+          "id": "FUJP81UTfZTPXgfj",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a65a4985-2e36-418a-ba07-0f1899bf8bea",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "```",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        48,
+        784
+      ],
+      "id": "1807b7cf-9678-41ef-8562-54880a7ffcfc",
+      "name": "Json Problem?1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1120,
+        816
+      ],
+      "id": "d1238bab-eea7-4baa-9fc6-0b0833e1f5e4",
+      "name": "Merge3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw_data = $input.first().json.output;\n\ntry {\n    // ۱. تمیزکاری: حذف ```json و کلمه json و فضاهای خالی\n    const cleaned = raw_data.replace(/```json|```|json/gi, \"\").trim();\n    \n    // ۲. تبدیل به آبجکت و ریختن در متغیر output\n    const output = JSON.parse(cleaned);\n\n    // ۳. خروجی نهایی برای استفاده در نودهای بعدی\n    return { output }; \n} catch (error) {\n    return { error: \"ساختار متن ارسالی برای تبدیل به JSON مناسب نبود\", details: error.message };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        144
+      ],
+      "id": "3c1f956b-923d-4b63-bfc1-6b775bf86c97",
+      "name": "Fix Json Problem"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ۱. گرفتن دیتای خام\nconst raw_data = $input.first().json.output;\n\ntry {\n    // ۲. تمیزکاری: حذف ```json و ``` و فضاهای خالی ابتدا و انتها\n    const cleanedData = raw_data\n        .replace(/```json/g, \"\")\n        .replace(/```/g, \"\")\n        .trim();\n\n    // ۳. تبدیل به آبجکت\n    const parsedOutput = JSON.parse(cleanedData);\n\n    // ۴. برگرداندن به ساختار n8n (حتماً داخل یک آرایه و فیلد json)\n    return [{\n        json: {\n            output: parsedOutput\n        }\n    }];\n} catch (error) {\n    // اگر باز هم خطا داد، اینجا دلیلش را می‌نویسد\n    return [{\n        json: {\n            error: \"خطا در پردازش JSON\",\n            message: error.message,\n            raw_data: raw_data // برای اینکه ببینی چی وارد شده\n        }\n    }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        352
+      ],
+      "id": "87b4f63c-77be-46ec-b8cc-a6b015d0d60f",
+      "name": "Fix Json Problem1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const isUrl = ($input.first().json.output)\nif (isUrl) {\n  return [{\n    json : $input.first().json.output,\n  }]\n}\n\nreturn [\n  {json: $input.first().json.output},\n]\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        240
+      ],
+      "id": "7a8f45ac-63d7-4199-b6d4-571d4f9ece67",
+      "name": "Fix Json Problem2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw_data = $input.first().json.output;\n\ntry {\n    // ۱. تمیزکاری: حذف ```json و کلمه json و فضاهای خالی\n    const cleaned = raw_data.replace(/```json|```|json/gi, \"\").trim();\n    \n    // ۲. تبدیل به آبجکت و ریختن در متغیر output\n    const output = JSON.parse(cleaned);\n\n    // ۳. خروجی نهایی برای استفاده در نودهای بعدی\n    return { output }; \n} catch (error) {\n    return { error: \"ساختار متن ارسالی برای تبدیل به JSON مناسب نبود\", details: error.message };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        704
+      ],
+      "id": "898445fa-8d5e-4f8a-9f94-ce9a1b1bac4c",
+      "name": "Fix Json Problem3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ۱. گرفتن دیتای خام\nconst raw_data = $input.first().json.output;\n\ntry {\n    // ۲. تمیزکاری: حذف ```json و ``` و فضاهای خالی ابتدا و انتها\n    const cleanedData = raw_data\n        .replace(/```json/g, \"\")\n        .replace(/```/g, \"\")\n        .trim();\n\n    // ۳. تبدیل به آبجکت\n    const parsedOutput = JSON.parse(cleanedData);\n\n    // ۴. برگرداندن به ساختار n8n (حتماً داخل یک آرایه و فیلد json)\n    return [{\n        json: {\n            output: parsedOutput\n        }\n    }];\n} catch (error) {\n    // اگر باز هم خطا داد، اینجا دلیلش را می‌نویسد\n    return [{\n        json: {\n            error: \"خطا در پردازش JSON\",\n            message: error.message,\n            raw_data: raw_data // برای اینکه ببینی چی وارد شده\n        }\n    }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        896
+      ],
+      "id": "25728777-512e-4de3-956a-0f5e223d59fd",
+      "name": "Fix Json Problem4"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.status }}",
+                    "rightValue": "CONTINUE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "0431b631-49dc-4f9c-83ce-60c625d7eefb"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CONTINUE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "5359ca32-92a9-4623-b71f-db84e4b34f63",
+                    "leftValue": "={{ $json.output.status }}",
+                    "rightValue": "STOP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "STOP"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1376,
+        816
+      ],
+      "id": "49109c76-00d5-4485-ae5a-111eaae076f5",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        960
+      ],
+      "id": "a4ebb628-c550-42da-9af7-0273679130e6",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7810be69-4197-4e0b-a723-d14a9cb0985f",
+              "name": "ex-context",
+              "value": "=Your previous chat with the user is incomplete and now you need to finish it.\n\n{{ $('Merge3').item.json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1648,
+        736
+      ],
+      "id": "564f5706-a12b-4e82-9407-8ca54ebd9edf",
+      "name": "Ex-Context"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Merge').item.json.output.o }}",
+                    "rightValue": "1",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "e9912729-1935-4b21-b015-7c6e9b4eebae"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Small-talk"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "fa710261-6d61-46e2-81de-1ceeb48ed2a4",
+                    "leftValue": "={{ $('Merge').item.json.output.o }}",
+                    "rightValue": "2",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Consultation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3d1a3fd3-388e-47e3-93ab-befbdbe74d32",
+                    "leftValue": "={{ $('Merge').item.json.output.o }}",
+                    "rightValue": "3",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reservation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2032,
+        832
+      ],
+      "id": "80d7ad89-98ca-4726-84c9-45af740ffbc5",
+      "name": "Switch2"
+    }
+  ],
+  "pinData": {
+    "Instagram Webhook1": [
+      {
+        "json": {
+          "headers": {
+            "host": "35296-nldty.irann8n.com",
+            "user-agent": "ManyChat",
+            "content-length": "1341",
+            "content-type": "application/json; charset=utf-8",
+            "x-forwarded-for": "3.79.209.162",
+            "x-forwarded-host": "35296-nldty.irann8n.com",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "442226ed3bd5",
+            "x-real-ip": "3.79.209.162",
+            "accept-encoding": "gzip"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "key": "user:276688978",
+            "id": "276688978",
+            "page_id": "",
+            "user_refs": [],
+            "status": "active",
+            "first_name": "Moslem",
+            "last_name": "Amiri",
+            "name": "Moslem Amiri",
+            "gender": null,
+            "profile_pic": "https://app.manychat.com/ava/4323597/276688978/e496d1d297754abe9b9fc1eda55773b3",
+            "locale": null,
+            "language": null,
+            "timezone": "UTC±00",
+            "live_chat_url": "https://app.manychat.com/fb4323597/chat/276688978",
+            "last_input_text": "ببین برای شب عید میخوام \nیه بار عکسشم بفرس\nبرای ۱۹ مارس ساعت ۹ شب برام فیکسش کن",
+            "optin_phone": false,
+            "phone": null,
+            "optin_email": false,
+            "email": null,
+            "subscribed": "2026-02-09T21:25:48+03:30",
+            "last_interaction": null,
+            "ig_last_interaction": "2026-02-27T16:29:32+03:30",
+            "last_seen": null,
+            "ig_last_seen": "2026-02-27T16:29:32+03:30",
+            "is_followup_enabled": true,
+            "ig_username": "mosllems",
+            "ig_id": 1999566673935128,
+            "whatsapp_phone": null,
+            "optin_whatsapp": false,
+            "phone_country_code": null,
+            "last_growth_tool": null,
+            "custom_fields": {
+              "N8N Response 1 (Image)": null,
+              "N8N Response 2": null,
+              "N8N Response 3": null,
+              "N8N Response 4": null,
+              "N8N Response 5": null,
+              "N8N Response 6": null,
+              "N8N Response 7": null,
+              "N8N Response 8": null,
+              "N8N Response 9": null,
+              "N8N Response 10": null,
+              "N8N Response 11": null,
+              "N8N Response 12": null,
+              "N8N Response 13": null,
+              "N8N Response 14": null,
+              "N8N Response 15": null,
+              "N8N Response 16": null
+            }
+          },
+          "webhookUrl": "https://35296-nldty.irann8n.com/webhook/nexflow",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Insert New Session1": {
+      "main": [
+        [
+          {
+            "node": "Save Pending Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Active Session1": {
+      "main": [
+        [
+          {
+            "node": "Session Exist?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Webhook1": {
+      "main": [
+        [
+          {
+            "node": "User Mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Processed": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Message Ready?": {
+      "main": [
+        [
+          {
+            "node": "Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Messages": {
+      "main": [
+        [
+          {
+            "node": "Combine Message Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Pending Message": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session Time": {
+      "main": [
+        [
+          {
+            "node": "Save Pending Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Exist?": {
+      "main": [
+        [
+          {
+            "node": "Update Session Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert New Session1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Barbershop Config": {
+      "main": [
+        [
+          {
+            "node": "System Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Mapping": {
+      "main": [
+        [
+          {
+            "node": "Barbershop Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Combine Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "System Prompts": {
+      "main": [
+        [
+          {
+            "node": "Check Active Session1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "JSON Problem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix JSON Problem 1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix JSON Problem 2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Small-Talk Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulting Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Small-Talk Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "Small-Talk Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Small-Talk Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Json Problem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Json Problem?": {
+      "main": [
+        [
+          {
+            "node": "Fix Json Problem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fix Json Problem1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON Problem?": {
+      "main": [
+        [
+          {
+            "node": "Fix JSON Problem 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fix JSON Problem 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Fix Json Problem2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Request Body": {
+      "main": [
+        [
+          {
+            "node": "Remove Empty Sections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Empty Sections": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Consulting Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory2": {
+      "ai_memory": [
+        [
+          {
+            "node": "Consulting Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_hair_models": {
+      "ai_tool": [
+        [
+          {
+            "node": "Consulting Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulting Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory3": {
+      "ai_memory": [
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_hair_models1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "reserve_a_time": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservation Agent": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "check_calendar_availability": {
+      "ai_tool": [
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Small-Talk Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Small-Talk Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Small-Talk Agent1": {
+      "main": [
+        [
+          {
+            "node": "Json Problem?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Json Problem?1": {
+      "main": [
+        [
+          {
+            "node": "Fix Json Problem3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fix Json Problem4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Json Problem": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Json Problem1": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fix Json Problem2": {
+      "main": [
+        [
+          {
+            "node": "Set Request Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Json Problem3": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Json Problem4": {
+      "main": [
+        [
+          {
+            "node": "Merge3",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge3": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Ex-Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ex-Context": {
+      "main": [
+        [
+          {
+            "node": "Switch2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch2": {
+      "main": [
+        [
+          {
+            "node": "Small-Talk Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consulting Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reservation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "7ca4781d-bfa0-4d12-8d0a-d3c4f0e63c0e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fad8a75597ef9b3407ea161c5bcdb05559b6205346e023cc01abbb1977432f86"
+  },
+  "id": "nhw1w85KYWAlQYm062Oa9",
+  "tags": []
+}
